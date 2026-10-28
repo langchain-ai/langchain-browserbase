@@ -1,0 +1,19 @@
+README.md
+  s_fe38d7dcf38e56::t_19d028732fb7fc 8,11,68,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1b30551bf0208b0e8386dd7be0420cb09688468",
+  "prompts": {},
+  "sessions": {
+    "s_fe38d7dcf38e56": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eee0effc-43d3-4fd1-953f-584f056fbf6c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Sydney Runkle <sydneymarierunkle@gmail.com>"
+    }
+  }
+}
