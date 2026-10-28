@@ -13,7 +13,7 @@ lint:
 	uv run --project $(ROOT) ruff check $(ROOT)src $(ROOT)tests
 
 typecheck:
-	uvx --from mypy==1.19.1 mypy --config-file $(ROOT)pyproject.toml --python-executable $(ROOT).venv/bin/python $(ROOT)src $(ROOT)tests/typecheck.py
+	uvx ty==0.0.94 check --project $(ROOT) --error-on-warning --color never $(ROOT)src $(ROOT)tests/typecheck.py
 
 test:
 	NO_COLOR=1 uv run --project $(ROOT) pytest $(ROOT)tests/test_middleware.py --color=no

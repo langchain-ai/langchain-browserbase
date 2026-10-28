@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, Self
@@ -21,6 +21,7 @@ from stagehand_middleware.facade import (
     facade_instructions,
     facade_tools,
 )
+from typing_extensions import override
 
 from .config import BrowserbaseOptions, LocalBrowserOptions, StagehandOptions
 
@@ -71,6 +72,7 @@ class StagehandMiddleware(AgentMiddleware):
             handle_tool_error=True,
         )
 
+    @override
     async def awrap_model_call(
         self,
         request: ModelRequest,
@@ -100,13 +102,13 @@ class StagehandMiddleware(AgentMiddleware):
         local_options: LocalBrowserOptions | None = None,
         stagehand_options: StagehandOptions | None = None,
         artifact_root: str | Path | None = None,
-    ) -> AsyncIterator[Self]:
+    ) -> AsyncGenerator[Self]:
         """Launch a session and close it when the asynchronous context exits."""
         if provider == "browserbase":
             if local_options is not None:
                 raise ValueError("local_options requires provider='local'")
             key = api_key or os.environ.get("BROWSERBASE_API_KEY")
-            if not key:
+            if key is None or key == "":
                 raise ValueError("Set BROWSERBASE_API_KEY or pass api_key for Browserbase.")
             browser = await browserbase.launch(api_key=key, **(browserbase_options or {}))
         elif provider == "local":

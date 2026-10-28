@@ -80,7 +80,7 @@ RUN_BROWSER_TESTS=1 uv run pytest tests/test_browser.py --color=no
 make build
 ```
 
-`make check` enforces Ruff formatting and lint rules (including bug-prone patterns, async misuse, and accidental prints), strict mypy checking of the package and public API examples, and focused agent/lifecycle tests. The distribution includes `py.typed` so downstream type checkers can validate usage. Mypy is pinned in the Makefile and runs through `uvx`; no extra runtime dependency is needed.
+`make check` enforces Ruff formatting and lint rules (including bug-prone patterns, async misuse, and accidental prints), ty checking of the package and public API examples with all diagnostics treated as errors, and focused agent/lifecycle tests. The distribution includes `py.typed` so downstream type checkers can validate usage. Astral's ty is pinned in the Makefile and runs through `uvx`; no extra runtime dependency is needed.
 
 The live browser test covers local Chrome and Browserbase; the remote case is skipped without `BROWSERBASE_API_KEY`. Set `CHROME_PATH` if Chrome is not in its usual install location. The Python distribution is `langchain-stagehand`, and the import is `langchain_stagehand`; this repository does not publish the separate upstream `stagehand-deepagents` package.
 
