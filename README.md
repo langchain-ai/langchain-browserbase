@@ -20,14 +20,15 @@ import asyncio
 
 from langchain.agents import create_agent
 from langchain_stagehand import StagehandMiddleware
-from stagehand import browserbase
+from stagehand import Stagehand, browserbase
 
 
 async def main():
     import os
 
     browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
-    middleware = StagehandMiddleware(browser=browser)
+    stagehand = await Stagehand.create(browser=browser)
+    middleware = StagehandMiddleware(stagehand=stagehand)
     agent = create_agent("anthropic:claude-sonnet-4-6", middleware=[middleware])
     try:
         result = await agent.ainvoke({
@@ -46,35 +47,37 @@ Install the model integration separately, such as `pip install langchain-anthrop
 
 ## Use with Deep Agents
 
-Use the same browser setup and replace `create_agent` with:
+Use the same Stagehand client setup and replace `create_agent` with:
 
 ```python
 from deepagents import create_deep_agent
 
-agent = create_deep_agent("anthropic:claude-sonnet-4-6", middleware=[StagehandMiddleware(browser=browser)])
+agent = create_deep_agent("anthropic:claude-sonnet-4-6", middleware=[StagehandMiddleware(stagehand=stagehand)])
 ```
 
 Install `deepagents` separately. Use `ainvoke` or `astream`: browser tools and middleware are asynchronous.
 
 ## Browser lifecycle
 
-Pass a browser launched with the Stagehand SDK, local Chrome or Browserbase:
+Pass a configured Stagehand client attached to local Chrome or Browserbase:
 
 ```python
-from stagehand import local_browser
+from stagehand import Stagehand, local_browser
 
 browser = await local_browser.launch(headless=True)
-middleware = StagehandMiddleware(browser=browser)
+stagehand = await Stagehand.create(browser=browser)
+middleware = StagehandMiddleware(stagehand=stagehand)
 ```
 
-Your application owns the browser. The middleware attaches a Stagehand client on the first browser call and keeps it attached across runs, so the same agent can be invoked again and its tabs, logins and snapshot IDs carry over. When you are done with the agent, call `await middleware.aclose()` and then close the browser. If the connection fails, the next browser call attaches afresh. A browser serves one agent at a time: give concurrent agents their own browsers. Take a new snapshot after navigation before using snapshot IDs.
+Your application configures and owns the Stagehand client and browser. All SDK settings remain available through `Stagehand.create(...)`, including API URL, model, caching, telemetry, and logging. The middleware reuses that exact client across runs, preserving tabs, logins, and snapshot IDs. Call `await middleware.aclose()` when finished to detach the client, then close the browser. Closing is terminal for that client: after a disconnection, the application supplies a new configured client instead of the middleware silently recreating one with defaults. Give concurrent agents separate clients/browsers. Take a new snapshot after navigation before using snapshot IDs.
+
+Artifacts are not saved. The screenshot tool returns image content in memory. Screenshot-saving code passed to `run` is rejected before any artifact file is written.
 
 ## Security and limitations
 
 - Browser tools can navigate, submit forms, and interact with authenticated websites; use LangChain's human-in-the-loop middleware for sensitive actions
 - Web page content is untrusted input, not instructions for your agent
 - The Playwright-shaped API is not a general-purpose security sandbox or a substitute for network isolation
-- `artifact_root` bounds where screenshots saved by run code can be written; use a dedicated directory per session
 - Agent execution is asynchronous only; browser state lives in the browser and is not checkpointed
 
 ## Development

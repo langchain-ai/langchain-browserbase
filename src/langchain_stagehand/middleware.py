@@ -3,42 +3,41 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import ToolException, tool
 from pydantic import Field
-from stagehand import Stagehand, StagehandBrowser
+from stagehand import Stagehand
 from stagehand_middleware.facade import (
     StagehandFacadeExecutionError,
     StagehandFacadeInputError,
     StagehandFacadeTools,
     facade_tools,
 )
+from typing_extensions import override
 
 from .actions import SnapshotAction
 
 T = TypeVar("T")
 
 
+class _MemoryOnlyFacade(StagehandFacadeTools):
+    @override
+    def _write_artifacts(self, artifacts: list[dict[str, str]]) -> None:
+        if artifacts:
+            raise StagehandFacadeInputError(
+                "Saving artifacts is disabled. Use the screenshot tool to return an image instead."
+            )
+
+
 class StagehandMiddleware(AgentMiddleware):
-    """Give an agent Stagehand's tools on a browser that the application owns.
+    """Add browser tools with `middleware=[StagehandMiddleware(stagehand=client)]`."""
 
-    A Stagehand client attaches on the first browser call and stays attached across
-    runs, so the browser's tabs, logins and snapshot IDs carry over to the next run.
-    When you are done with the agent, call `aclose()`, then close the browser yourself.
-    """
-
-    def __init__(
-        self, *, browser: StagehandBrowser, artifact_root: str | Path | None = None
-    ) -> None:
-        self._browser = browser
-        self._artifact_root = artifact_root
-        self._facade: StagehandFacadeTools | None = None
+    def __init__(self, *, stagehand: Stagehand) -> None:
+        self._facade = _MemoryOnlyFacade(stagehand, on_close_requested=stagehand.close)
         self._lock = asyncio.Lock()
         descriptions = {spec["name"]: spec["description"] for spec in facade_tools()}
 
@@ -47,6 +46,7 @@ class StagehandMiddleware(AgentMiddleware):
             + (
                 " Reuse the initialized browser; do not launch another browser or browser process."
                 " Capture a new snapshot after navigation or stale IDs."
+                " Saving files is disabled; use the screenshot tool for images."
             )
         )
         async def run(
@@ -83,33 +83,16 @@ class StagehandMiddleware(AgentMiddleware):
             browser_tool.handle_tool_error = True
             browser_tool.handle_validation_error = True
 
-    async def _attached(self) -> StagehandFacadeTools:
-        if self._facade is None:
-            stagehand = await Stagehand.create(browser=self._browser)
-            # Run code's `browser.close()` detaches the client; the browser stays.
-            self._facade = StagehandFacadeTools(
-                stagehand, artifact_root=self._artifact_root, on_close_requested=stagehand.close
-            )
-        return self._facade
-
-    async def _detach(self) -> None:
-        if facade := self._facade:
-            self._facade = None
-            with contextlib.suppress(Exception):
-                await facade.close()
-
     async def aclose(self) -> None:
-        """Detach the Stagehand client; the browser stays open. A later call attaches again."""
+        """Close the supplied Stagehand client without closing its browser."""
         async with self._lock:
-            await self._detach()
+            await self._facade.close()
 
     async def _call(self, operation: Callable[[StagehandFacadeTools], Awaitable[T]]) -> T:
         async with self._lock:
             try:
-                return await operation(await self._attached())
+                return await operation(self._facade)
             except (StagehandFacadeInputError, StagehandFacadeExecutionError) as error:
                 raise ToolException(str(error)) from None
             except Exception as error:
-                # The connection may be dead: detach so the next call attaches afresh.
-                await self._detach()
                 raise ToolException(f"{type(error).__name__}: {error}") from None

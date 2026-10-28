@@ -11,17 +11,14 @@ from langchain_stagehand import StagehandMiddleware
 
 @pytest.fixture
 def middleware():
-    with (
-        patch("langchain_stagehand.middleware.Stagehand.create", AsyncMock()),
-        patch("langchain_stagehand.middleware.StagehandFacadeTools") as facade,
-    ):
+    with patch("langchain_stagehand.middleware._MemoryOnlyFacade") as facade:
         facade.return_value.run = AsyncMock(return_value={"title": "Example"})
         facade.return_value.snapshot = AsyncMock(return_value="[1-1] button Submit")
         facade.return_value.screenshot = AsyncMock(
             return_value={"data": "aW1hZ2U=", "mimeType": "image/png"}
         )
         facade.return_value.close = AsyncMock()
-        middleware = StagehandMiddleware(browser=MagicMock())
+        middleware = StagehandMiddleware(stagehand=MagicMock())
         middleware.facade = facade.return_value
         yield middleware
 
@@ -84,18 +81,21 @@ async def test_agent_executes_browser_tool(middleware):
     middleware.facade.close.assert_not_awaited()
 
 
-async def test_aclose_detaches_and_a_later_call_reattaches(middleware):
-    run = middleware.tools[0]
-    for _ in range(2):
-        await run.ainvoke({"code": "return 1;"})
-        await middleware.aclose()
-    assert middleware.facade.close.await_count == 2
-    await middleware.aclose()  # nothing attached: no-op
-    assert middleware.facade.close.await_count == 2
+async def test_aclose_closes_client(middleware):
+    await middleware.aclose()
+    middleware.facade.close.assert_awaited_once()
 
 
-async def test_connection_error_detaches(middleware):
+async def test_connection_error_is_model_visible(middleware):
     run = middleware.tools[0]
     middleware.facade.run.side_effect = ConnectionError("socket closed")
     assert "ConnectionError: socket closed" in await run.ainvoke({"code": "return 1;"})
-    middleware.facade.close.assert_awaited_once()
+
+
+def test_artifact_writes_are_disabled(tmp_path):
+    from langchain_stagehand.middleware import _MemoryOnlyFacade
+
+    facade = _MemoryOnlyFacade(MagicMock())
+    with pytest.raises(StagehandFacadeInputError, match="Saving artifacts is disabled"):
+        facade._write_artifacts([{"path": str(tmp_path / "shot.png"), "base64": "aW1hZ2U="}])
+    assert list(tmp_path.iterdir()) == []

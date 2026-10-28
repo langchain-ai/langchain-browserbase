@@ -4,7 +4,7 @@ import pytest
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, ToolMessage
-from stagehand import browserbase, local_browser
+from stagehand import Stagehand, browserbase, local_browser
 
 from langchain_stagehand import StagehandMiddleware
 
@@ -20,7 +20,8 @@ async def test_live_browser(provider):
         )
     else:
         browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
-    middleware = StagehandMiddleware(browser=browser)
+    stagehand = await Stagehand.create(browser=browser)
+    middleware = StagehandMiddleware(stagehand=stagehand)
     try:
 
         class ToolCallingModel(FakeMessagesListChatModel):
@@ -78,6 +79,9 @@ async def test_live_browser(provider):
         assert outputs[2].content_blocks[0]["mime_type"] == "image/jpeg"
         result = await agent.ainvoke({"messages": [{"role": "user", "content": "Where are we?"}]})
         assert result["messages"][-2].content == "https://example.com/"
+        assert "Saving artifacts is disabled" in await middleware.tools[0].ainvoke(
+            {"code": 'await page.screenshot({path: "must-not-exist.png"});'}
+        )
     finally:
         await middleware.aclose()
         await browser.close()
