@@ -9,9 +9,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
-from langchain.agents.middleware import AgentMiddleware, AgentState
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import ToolException, tool
-from langgraph.runtime import Runtime
 from pydantic import Field
 from stagehand import Stagehand, StagehandBrowser
 from stagehand_middleware.facade import (
@@ -20,7 +19,6 @@ from stagehand_middleware.facade import (
     StagehandFacadeTools,
     facade_tools,
 )
-from typing_extensions import override
 
 from .actions import SnapshotAction
 
@@ -30,9 +28,9 @@ T = TypeVar("T")
 class StagehandMiddleware(AgentMiddleware):
     """Give an agent Stagehand's tools on a browser that the application owns.
 
-    A Stagehand client attaches on the first browser call and detaches after each run,
-    so the browser, its tabs and logins carry over to the next run. Close the browser
-    yourself when you are done with the agent.
+    A Stagehand client attaches on the first browser call and stays attached across
+    runs, so the browser's tabs, logins and snapshot IDs carry over to the next run.
+    When you are done with the agent, call `aclose()`, then close the browser yourself.
     """
 
     def __init__(
@@ -97,8 +95,8 @@ class StagehandMiddleware(AgentMiddleware):
             with contextlib.suppress(Exception):
                 await facade.close()
 
-    @override
-    async def aafter_agent(self, state: AgentState, runtime: Runtime) -> None:
+    async def aclose(self) -> None:
+        """Detach the Stagehand client; the browser stays open. A later call attaches again."""
         async with self._lock:
             await self._detach()
 

@@ -27,16 +27,15 @@ async def main():
     import os
 
     browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
-    agent = create_agent(
-        "anthropic:claude-sonnet-4-6",
-        middleware=[StagehandMiddleware(browser=browser)],
-    )
+    middleware = StagehandMiddleware(browser=browser)
+    agent = create_agent("anthropic:claude-sonnet-4-6", middleware=[middleware])
     try:
         result = await agent.ainvoke({
             "messages": [{"role": "user", "content": "Open example.com and summarize the page."}]
         })
         print(result["messages"][-1].content)
     finally:
+        await middleware.aclose()
         await browser.close()
 
 
@@ -68,7 +67,7 @@ browser = await local_browser.launch(headless=True)
 middleware = StagehandMiddleware(browser=browser)
 ```
 
-Your application owns the browser and closes it when it is done with the agent. The middleware attaches a Stagehand client on the first browser call and detaches it after each run, so the same agent can be invoked again and its tabs and logins carry over. If the connection fails, the next browser call attaches afresh. A browser serves one agent at a time: give concurrent agents their own browsers. Take a new snapshot after navigation before using snapshot IDs.
+Your application owns the browser. The middleware attaches a Stagehand client on the first browser call and keeps it attached across runs, so the same agent can be invoked again and its tabs, logins and snapshot IDs carry over. When you are done with the agent, call `await middleware.aclose()` and then close the browser. If the connection fails, the next browser call attaches afresh. A browser serves one agent at a time: give concurrent agents their own browsers. Take a new snapshot after navigation before using snapshot IDs.
 
 ## Security and limitations
 

@@ -20,8 +20,8 @@ async def test_live_browser(provider):
         )
     else:
         browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
+    middleware = StagehandMiddleware(browser=browser)
     try:
-        middleware = StagehandMiddleware(browser=browser)
 
         class ToolCallingModel(FakeMessagesListChatModel):
             def bind_tools(self, tools, **kwargs):
@@ -79,4 +79,5 @@ async def test_live_browser(provider):
         result = await agent.ainvoke({"messages": [{"role": "user", "content": "Where are we?"}]})
         assert result["messages"][-2].content == "https://example.com/"
     finally:
+        await middleware.aclose()
         await browser.close()
