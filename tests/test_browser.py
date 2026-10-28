@@ -1,6 +1,10 @@
 import os
 
 import pytest
+from langchain.agents import create_agent
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage, ToolMessage
+from stagehand import Stagehand, browserbase, local_browser
 
 from langchain_stagehand import StagehandMiddleware
 
@@ -10,16 +14,62 @@ from langchain_stagehand import StagehandMiddleware
 async def test_live_browser(provider):
     if provider == "browserbase" and not os.environ.get("BROWSERBASE_API_KEY"):
         pytest.skip("BROWSERBASE_API_KEY is not configured")
-    options = {"headless": True} if provider == "local" else None
-    if options is not None and os.environ.get("CHROME_PATH"):
-        options.update(executable_path=os.environ["CHROME_PATH"], chromium_sandbox=False)
-    async with StagehandMiddleware.connect(provider=provider, local_options=options) as middleware:
-        run, snapshot, screenshot = middleware.tools
-        result = await run.ainvoke(
-            {"code": 'await page.goto("https://example.com"); return await page.title();'}
+    if provider == "local":
+        browser = await local_browser.launch(
+            headless=True, executable_path=os.environ.get("CHROME_PATH"), chromium_sandbox=False
         )
-        assert result == "Example Domain"
-        assert "Example Domain" in await snapshot.ainvoke({})
-        image = await screenshot.ainvoke({"type": "jpeg", "quality": 40})
-        assert image[0]["mime_type"] == "image/jpeg"
-        assert image[0]["base64"]
+    else:
+        browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
+    try:
+        stagehand = await Stagehand.create(browser=browser)
+        middleware = StagehandMiddleware(stagehand=stagehand)
+
+        class ToolCallingModel(FakeMessagesListChatModel):
+            def bind_tools(self, tools, **kwargs):
+                return self
+
+        model = ToolCallingModel(
+            responses=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "run",
+                            "id": "navigate",
+                            "args": {
+                                "code": (
+                                    'await page.goto("https://example.com"); '
+                                    "return await page.title();"
+                                )
+                            },
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="", tool_calls=[{"name": "snapshot", "id": "snapshot", "args": {}}]
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "screenshot",
+                            "id": "screenshot",
+                            "args": {"type": "jpeg", "quality": 40},
+                        }
+                    ],
+                ),
+                AIMessage(content="Done"),
+            ]
+        )
+        agent = create_agent(model, middleware=[middleware])
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Inspect example.com"}]}
+        )
+        outputs = [message for message in result["messages"] if isinstance(message, ToolMessage)]
+        assert outputs[0].content == "Example Domain"
+        assert "Example Domain" in outputs[1].content
+        assert outputs[2].content_blocks[0]["mime_type"] == "image/jpeg"
+        with pytest.raises(RuntimeError):
+            await browser.context.pages()
+    finally:
+        await browser.close()

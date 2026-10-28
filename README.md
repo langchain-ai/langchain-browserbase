@@ -20,15 +20,22 @@ import asyncio
 
 from langchain.agents import create_agent
 from langchain_stagehand import StagehandMiddleware
+from stagehand import Stagehand, browserbase
 
 
 async def main():
-    async with StagehandMiddleware.connect() as browser:
-        agent = create_agent("anthropic:claude-sonnet-4-6", middleware=[browser])
-        result = await agent.ainvoke({
-            "messages": [{"role": "user", "content": "Open example.com and summarize the page."}]
-        })
-        print(result["messages"][-1].content)
+    import os
+
+    browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
+    stagehand = await Stagehand.create(browser=browser)
+    agent = create_agent(
+        "anthropic:claude-sonnet-4-6",
+        middleware=[StagehandMiddleware(stagehand=stagehand)],
+    )
+    result = await agent.ainvoke({
+        "messages": [{"role": "user", "content": "Open example.com and summarize the page."}]
+    })
+    print(result["messages"][-1].content)
 
 
 asyncio.run(main())
@@ -38,29 +45,31 @@ Install the model integration separately, such as `pip install langchain-anthrop
 
 ## Use with Deep Agents
 
-Inside the same asynchronous context, replace `create_agent` with:
+Use the same Stagehand client setup and replace `create_agent` with:
 
 ```python
 from deepagents import create_deep_agent
 
-agent = create_deep_agent("anthropic:claude-sonnet-4-6", middleware=[browser])
+agent = create_deep_agent("anthropic:claude-sonnet-4-6", middleware=[StagehandMiddleware(stagehand=stagehand)])
 ```
 
 Install `deepagents` separately. Use `ainvoke` or `astream`: browser tools and middleware are asynchronous.
 
-## Local browser and session options
+## Client lifecycle
+
+Pass a Stagehand client using `StagehandMiddleware(stagehand=stagehand)`. There is no middleware connection method or parallel configuration API. Use the Stagehand SDK directly to configure Browserbase or local Chrome:
 
 ```python
-async with StagehandMiddleware.connect(
-    provider="local",
-    local_options={"headless": True},
-) as browser:
-    ...
+from stagehand import Stagehand, local_browser
+
+browser = await local_browser.launch(headless=True)
+stagehand = await Stagehand.create(browser=browser)
+middleware = StagehandMiddleware(stagehand=stagehand)
 ```
 
-Local mode requires Chrome. `local_options`, `browserbase_options`, and `stagehand_options` are typed dictionaries exported as `LocalBrowserOptions`, `BrowserbaseOptions`, and `StagehandOptions`. They expose common SDK settings with editor completion and static checking rather than untyped keyword bags. For example, pass Browserbase `region` or `browser_settings` in `browserbase_options`. Options for the wrong provider raise an error. For SDK settings not exposed here, create a Stagehand session yourself and pass it to the middleware constructor. The context manager closes both Stagehand and the browser on exit, including when the agent fails.
+Passing the client transfers cleanup responsibility to the middleware. It closes Stagehand and its browser after the agent finishes, and on model/tool exceptions or cancellation within those calls. Create a fresh client and middleware per agent invocation; reuse and concurrent invocations are rejected. Browser state is shared across tool calls within that invocation, not across invocations. Do not share the client with another agent. Take a new snapshot after navigation before using snapshot IDs.
 
-To reuse an existing Stagehand session, construct `StagehandMiddleware(stagehand)`. You own its lifecycle and must close it yourself. A browser session persists across agent calls while its context remains open. Do not share one middleware instance across unrelated conversations or tenants; the underlying facade serializes tool calls, but it does not isolate their browsing state. Take a new snapshot after navigation before using snapshot IDs.
+If client creation fails before the middleware is constructed, close the browser yourself. Failures in other middleware hooks, graph-level interruption, or abandoning a stream may bypass these hooks; the application must ensure cleanup in those cases.
 
 ## Security and limitations
 
