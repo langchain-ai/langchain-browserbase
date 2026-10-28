@@ -10,7 +10,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, ModelResponse
 from langchain.tools.tool_node import ToolCallRequest
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool, ToolException
 from langgraph.runtime import Runtime
 from langgraph.types import Command
@@ -19,7 +19,6 @@ from stagehand_middleware.facade import (
     StagehandFacadeExecutionError,
     StagehandFacadeInputError,
     StagehandFacadeTools,
-    facade_instructions,
     facade_tools,
 )
 from typing_extensions import override
@@ -84,10 +83,22 @@ class StagehandMiddleware(AgentMiddleware):
             except (StagehandFacadeInputError, StagehandFacadeExecutionError) as error:
                 raise ToolException(str(error)) from None
 
+        description = spec["description"]
+        if name == "run":
+            description += (
+                " Reuse the initialized browser; do not launch another browser or browser process."
+                " Snapshot action IDs are valid only for the latest snapshot;"
+                " capture a new snapshot after navigation or stale IDs."
+            )
+        elif name == "snapshot":
+            description += (
+                " Capture a new snapshot after navigation or stale IDs before taking actions."
+            )
+
         return StructuredTool.from_function(
             coroutine=invoke,
             name=name,
-            description=spec["description"],
+            description=description,
             args_schema=spec["inputSchema"],
             handle_tool_error=True,
         )
@@ -98,19 +109,8 @@ class StagehandMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        blocks: list[str | dict[str, Any]] = (
-            [dict(block) for block in request.system_message.content_blocks]
-            if request.system_message
-            else []
-        )
-        blocks.append({"type": "text", "text": facade_instructions()})
-        system_message = (
-            request.system_message.model_copy(update={"content": blocks})
-            if request.system_message
-            else SystemMessage(content=blocks)
-        )
         try:
-            return await handler(request.override(system_message=system_message))
+            return await handler(request)
         except BaseException:
             await self._close()
             raise

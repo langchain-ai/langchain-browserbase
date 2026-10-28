@@ -1,6 +1,6 @@
 # LangChain Stagehand
 
-Add a persistent browser to a LangChain or Deep Agents agent with `StagehandMiddleware`. The middleware exposes Stagehand's shared `run`, `snapshot`, and `screenshot` tools, injects their browser instructions, and returns screenshots as model-visible images. No MCP server is needed.
+Add a persistent browser to a LangChain or Deep Agents agent with `StagehandMiddleware`. The middleware exposes Stagehand's shared `run`, `snapshot`, and `screenshot` tools, includes browser usage guidance in their descriptions, and returns screenshots as model-visible images. The agent’s system prompt is left untouched. No MCP server is needed.
 
 ## Install
 

@@ -6,7 +6,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
-from stagehand_middleware.facade import StagehandFacadeInputError, facade_instructions
+from stagehand_middleware.facade import StagehandFacadeInputError
 
 from langchain_stagehand import StagehandMiddleware
 
@@ -51,24 +51,30 @@ async def test_errors_are_model_visible(middleware):
     middleware._facade.screenshot.assert_not_awaited()
 
 
-async def test_system_message_is_preserved(middleware):
-    request = ModelRequest(
-        model=MagicMock(),
-        messages=[],
-        system_message=SystemMessage(
+@pytest.mark.parametrize(
+    "system_message",
+    [
+        None,
+        SystemMessage(
             content="Original instruction", name="policy", additional_kwargs={"custom": "value"}
         ),
-    )
+    ],
+)
+async def test_model_request_is_untouched(middleware, system_message):
+    request = ModelRequest(model=MagicMock(), messages=[], system_message=system_message)
     handler = AsyncMock(return_value=SimpleNamespace(result=[]))
     await middleware.awrap_model_call(request, handler)
-    updated = handler.call_args.args[0]
-    assert updated.system_message.content_blocks == [
-        {"type": "text", "text": "Original instruction"},
-        {"type": "text", "text": facade_instructions()},
-    ]
-    assert request.system_message.content == "Original instruction"
-    assert updated.system_message.name == "policy"
-    assert updated.system_message.additional_kwargs == {"custom": "value"}
+    assert handler.call_args.args[0] is request
+    assert request.system_message is system_message
+
+
+def test_tool_descriptions_include_browser_guidance(middleware):
+    run, snapshot, screenshot = middleware.tools
+    assert "Playwright" in run.description
+    assert "do not launch another browser" in run.description
+    assert "after navigation or stale IDs" in run.description
+    assert "after navigation or stale IDs" in snapshot.description
+    assert "screenshot" in screenshot.description
 
 
 async def test_agent_executes_browser_tool(middleware):
