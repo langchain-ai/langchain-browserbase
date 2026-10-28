@@ -1,0 +1,25 @@
+README.md
+  s_fe38d7dcf38e56::t_e87a03747de682 71,73
+src/langchain_stagehand/middleware.py
+  s_fe38d7dcf38e56::t_9f3882a60f9518 29-30,74-80,83-88
+tests/test_browser.py
+  s_fe38d7dcf38e56::t_70efe8240982c7 82-85
+tests/test_middleware.py
+  s_fe38d7dcf38e56::t_caa5b47e590687 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40d1ae1d5e0543fe1e49b13d0887df40acf1c4c8",
+  "prompts": {},
+  "sessions": {
+    "s_fe38d7dcf38e56": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eee0effc-43d3-4fd1-953f-584f056fbf6c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Sydney Runkle <sydneymarierunkle@gmail.com>"
+    }
+  }
+}
