@@ -49,7 +49,9 @@ class StagehandMiddleware(AgentMiddleware):
                 " Capture a new snapshot after navigation or stale IDs."
             )
         )
-        async def run(code: str | None = None, actions: list[SnapshotAction] | None = None) -> str:
+        async def run(
+            *, code: str | None = None, actions: list[SnapshotAction] | None = None
+        ) -> str:
             result = await self._call(lambda facade: facade.run(code=code, actions=actions))
             return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
 
@@ -57,11 +59,12 @@ class StagehandMiddleware(AgentMiddleware):
             description=descriptions["snapshot"]
             + (" Capture a new snapshot after navigation or stale IDs before taking actions.")
         )
-        async def snapshot(includeIframes: bool = True) -> str:
+        async def snapshot(*, includeIframes: bool = True) -> str:
             return await self._call(lambda facade: facade.snapshot(include_iframes=includeIframes))
 
         @tool(description=descriptions["screenshot"])
         async def screenshot(
+            *,
             fullPage: bool | None = None,
             type: Literal["png", "jpeg"] = "png",
             quality: Annotated[float | None, Field(ge=0, le=100)] = None,

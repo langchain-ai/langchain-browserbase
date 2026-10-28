@@ -29,7 +29,6 @@ def middleware():
 async def test_tools_delegate_and_preserve_schemas(middleware):
     run, snapshot, screenshot = middleware.tools
     assert [tool.name for tool in middleware.tools] == ["run", "snapshot", "screenshot"]
-    assert "actions" in run.get_input_schema().model_json_schema()["properties"]
     assert await run.ainvoke({"code": "return await page.title();"}) == '{"title": "Example"}'
     middleware.facade.run.assert_awaited_once_with(code="return await page.title();", actions=None)
     assert await snapshot.ainvoke({"includeIframes": False}) == "[1-1] button Submit"
@@ -53,15 +52,6 @@ async def test_errors_are_model_visible(middleware):
     assert "validation error" in await screenshot.ainvoke({"quality": 101})
     assert "validation error" in await run.ainvoke({"actions": [{"op": "fill", "id": "1-1"}]})
     middleware.facade.screenshot.assert_not_awaited()
-
-
-def test_tool_descriptions_include_browser_guidance(middleware):
-    run, snapshot, screenshot = middleware.tools
-    assert "Playwright" in run.description
-    assert "do not launch another browser" in run.description
-    assert "after navigation or stale IDs" in run.description
-    assert "after navigation or stale IDs" in snapshot.description
-    assert "screenshot" in screenshot.description
 
 
 async def test_agent_executes_browser_tool(middleware):

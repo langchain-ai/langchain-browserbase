@@ -91,4 +91,10 @@ make build
 
 The live browser test covers local Chrome and Browserbase; the remote case is skipped without `BROWSERBASE_API_KEY`. Set `CHROME_PATH` if Chrome is not in its usual install location. The Python distribution is `langchain-stagehand`, and the import is `langchain_stagehand`; this repository does not publish the separate upstream `stagehand-deepagents` package.
 
-Before release, configure package ownership and trusted publishing, run both live browser cases, and publish the built distribution to PyPI. CI and publishing workflows are not configured by this initial implementation.
+## Release
+
+The initial version is `0.0.1`. Configure a PyPI pending trusted publisher for `langchain-stagehand` with GitHub owner `langchain-ai`, repository `langchain-browserbase`, workflow `release.yml`, and environment `pypi`. In GitHub, configure the `pypi` environment with required reviewers and restrict deployments to `main`.
+
+After merging, run **Actions → Release to PyPI → Run workflow** on `main`. The workflow checks the locked dependencies, runs lint/type checks and focused tests, builds the distribution, and publishes with uv using OIDC trusted publishing—no PyPI token. It publishes the version in `pyproject.toml`; bump that version and refresh `uv.lock` before subsequent releases. Live browser verification is a separate pre-release check, not part of publishing.
+
+The middleware constructor and browser tool arguments are keyword-only so optional parameters can evolve without positional-call ambiguity.
