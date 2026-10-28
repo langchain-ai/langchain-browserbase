@@ -79,9 +79,10 @@ async def test_live_browser(provider):
         assert outputs[2].content_blocks[0]["mime_type"] == "image/jpeg"
         result = await agent.ainvoke({"messages": [{"role": "user", "content": "Where are we?"}]})
         assert result["messages"][-2].content == "https://example.com/"
-        assert "Saving artifacts is disabled" in await middleware.tools[0].ainvoke(
-            {"code": 'await page.screenshot({path: "must-not-exist.png"});'}
+        # Run code can't close the application's browser.
+        await middleware.tools[0].ainvoke({"code": "await browser.close();"})
+        assert await middleware.tools[0].ainvoke({"code": "return page.url();"}) == (
+            "https://example.com/"
         )
     finally:
-        await middleware.aclose()
         await browser.close()

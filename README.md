@@ -36,7 +36,6 @@ async def main():
         })
         print(result["messages"][-1].content)
     finally:
-        await middleware.aclose()
         await browser.close()
 
 
@@ -69,9 +68,9 @@ stagehand = await Stagehand.create(browser=browser)
 middleware = StagehandMiddleware(stagehand=stagehand)
 ```
 
-Your application configures and owns the Stagehand client and browser. All SDK settings remain available through `Stagehand.create(...)`, including API URL, model, caching, telemetry, and logging. The middleware reuses that exact client across runs, preserving tabs, logins, and snapshot IDs. Call `await middleware.aclose()` when finished to detach the client, then close the browser. Closing is terminal for that client: after a disconnection, the application supplies a new configured client instead of the middleware silently recreating one with defaults. Give concurrent agents separate clients/browsers. Take a new snapshot after navigation before using snapshot IDs.
+Your application configures and owns the Stagehand client and browser. All SDK settings remain available through `Stagehand.create(...)`, including API URL, model, caching, telemetry, and logging. The middleware reuses that exact client across runs, preserving tabs, logins, and snapshot IDs. Close the browser when finished; that also closes the client. The middleware never closes or recreates the client, and `browser.close()` in run code leaves both open: after a disconnection, the application supplies a new configured client. Give concurrent agents separate clients/browsers. Take a new snapshot after navigation before using snapshot IDs.
 
-Artifacts are not saved. The screenshot tool returns image content in memory. Screenshot-saving code passed to `run` is rejected before any artifact file is written.
+The screenshot tool returns images to the model. Screenshots that run code saves with a `path` are written under the current working directory, not to a Deep Agents backend; backend support is not implemented yet.
 
 ## Security and limitations
 

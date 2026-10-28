@@ -11,7 +11,7 @@ from langchain_stagehand import StagehandMiddleware
 
 @pytest.fixture
 def middleware():
-    with patch("langchain_stagehand.middleware._MemoryOnlyFacade") as facade:
+    with patch("langchain_stagehand.middleware.StagehandFacadeTools") as facade:
         facade.return_value.run = AsyncMock(return_value={"title": "Example"})
         facade.return_value.snapshot = AsyncMock(return_value="[1-1] button Submit")
         facade.return_value.screenshot = AsyncMock(
@@ -81,21 +81,7 @@ async def test_agent_executes_browser_tool(middleware):
     middleware.facade.close.assert_not_awaited()
 
 
-async def test_aclose_closes_client(middleware):
-    await middleware.aclose()
-    middleware.facade.close.assert_awaited_once()
-
-
 async def test_connection_error_is_model_visible(middleware):
     run = middleware.tools[0]
     middleware.facade.run.side_effect = ConnectionError("socket closed")
     assert "ConnectionError: socket closed" in await run.ainvoke({"code": "return 1;"})
-
-
-def test_artifact_writes_are_disabled(tmp_path):
-    from langchain_stagehand.middleware import _MemoryOnlyFacade
-
-    facade = _MemoryOnlyFacade(MagicMock())
-    with pytest.raises(StagehandFacadeInputError, match="Saving artifacts is disabled"):
-        facade._write_artifacts([{"path": str(tmp_path / "shot.png"), "base64": "aW1hZ2U="}])
-    assert list(tmp_path.iterdir()) == []

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal, TypeVar
@@ -17,28 +16,18 @@ from stagehand_middleware.facade import (
     StagehandFacadeTools,
     facade_tools,
 )
-from typing_extensions import override
 
 from .actions import SnapshotAction
 
 T = TypeVar("T")
 
 
-class _MemoryOnlyFacade(StagehandFacadeTools):
-    @override
-    def _write_artifacts(self, artifacts: list[dict[str, str]]) -> None:
-        if artifacts:
-            raise StagehandFacadeInputError(
-                "Saving artifacts is disabled. Use the screenshot tool to return an image instead."
-            )
-
-
 class StagehandMiddleware(AgentMiddleware):
     """Add browser tools with `middleware=[StagehandMiddleware(stagehand=client)]`."""
 
     def __init__(self, *, stagehand: Stagehand) -> None:
-        self._facade = _MemoryOnlyFacade(stagehand, on_close_requested=stagehand.close)
-        self._lock = asyncio.Lock()
+        self._stagehand = stagehand
+        self._facade = self._open_facade()
         descriptions = {spec["name"]: spec["description"] for spec in facade_tools()}
 
         @tool(
@@ -46,7 +35,6 @@ class StagehandMiddleware(AgentMiddleware):
             + (
                 " Reuse the initialized browser; do not launch another browser or browser process."
                 " Capture a new snapshot after navigation or stale IDs."
-                " Saving files is disabled; use the screenshot tool for images."
             )
         )
         async def run(
@@ -83,16 +71,18 @@ class StagehandMiddleware(AgentMiddleware):
             browser_tool.handle_tool_error = True
             browser_tool.handle_validation_error = True
 
-    async def aclose(self) -> None:
-        """Close the supplied Stagehand client without closing its browser."""
-        async with self._lock:
-            await self._facade.close()
+    def _open_facade(self) -> StagehandFacadeTools:
+        # The application owns the client and browser: `browser.close()` in run code
+        # leaves both open and swaps in a fresh facade, so later calls still work.
+        async def reopen() -> None:
+            self._facade = self._open_facade()
+
+        return StagehandFacadeTools(self._stagehand, on_close_requested=reopen)
 
     async def _call(self, operation: Callable[[StagehandFacadeTools], Awaitable[T]]) -> T:
-        async with self._lock:
-            try:
-                return await operation(self._facade)
-            except (StagehandFacadeInputError, StagehandFacadeExecutionError) as error:
-                raise ToolException(str(error)) from None
-            except Exception as error:
-                raise ToolException(f"{type(error).__name__}: {error}") from None
+        try:
+            return await operation(self._facade)
+        except (StagehandFacadeInputError, StagehandFacadeExecutionError) as error:
+            raise ToolException(str(error)) from None
+        except Exception as error:
+            raise ToolException(f"{type(error).__name__}: {error}") from None
