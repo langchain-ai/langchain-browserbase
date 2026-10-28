@@ -26,9 +26,9 @@ def middleware():
 async def test_tools_delegate_and_preserve_schemas(middleware):
     run, snapshot, screenshot = middleware.tools
     assert [tool.name for tool in middleware.tools] == ["run", "snapshot", "screenshot"]
-    assert "actions" in run.args_schema["properties"]
+    assert "actions" in run.get_input_schema().model_json_schema()["properties"]
     assert await run.ainvoke({"code": "return await page.title();"}) == '{"title": "Example"}'
-    middleware._facade.run.assert_awaited_once_with(code="return await page.title();")
+    middleware._facade.run.assert_awaited_once_with(code="return await page.title();", actions=None)
     assert await snapshot.ainvoke({"includeIframes": False}) == "[1-1] button Submit"
     middleware._facade.snapshot.assert_awaited_once_with(include_iframes=False)
     result = await screenshot.ainvoke(
@@ -47,7 +47,8 @@ async def test_errors_are_model_visible(middleware):
     assert (
         await run.ainvoke({"actions": [{"op": "click", "id": "1-1"}]}) == "Snapshot IDs are stale"
     )
-    assert "Invalid browser" in await screenshot.ainvoke({"quality": 101})
+    assert "validation error" in await screenshot.ainvoke({"quality": 101})
+    assert "validation error" in await run.ainvoke({"actions": [{"op": "fill", "id": "1-1"}]})
     middleware._facade.screenshot.assert_not_awaited()
 
 

@@ -5,15 +5,15 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal, TypeVar
 
-from jsonschema import Draft202012Validator
 from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, ModelResponse
 from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
-from langchain_core.tools import StructuredTool, ToolException
+from langchain_core.tools import ToolException, tool
 from langgraph.runtime import Runtime
 from langgraph.types import Command
+from pydantic import Field
 from stagehand import Stagehand
 from stagehand_middleware.facade import (
     StagehandFacadeExecutionError,
@@ -23,6 +23,10 @@ from stagehand_middleware.facade import (
 )
 from typing_extensions import override
 
+from .actions import SnapshotAction
+
+T = TypeVar("T")
+
 
 class StagehandMiddleware(AgentMiddleware):
     """Give an agent a Stagehand client and close it when the agent finishes."""
@@ -31,7 +35,45 @@ class StagehandMiddleware(AgentMiddleware):
         self._facade = StagehandFacadeTools(stagehand, artifact_root=artifact_root)
         self._started = False
         self._finished = False
-        self.tools = [self._tool(spec) for spec in facade_tools()]
+        descriptions = {spec["name"]: spec["description"] for spec in facade_tools()}
+
+        @tool(
+            description=descriptions["run"]
+            + (
+                " Reuse the initialized browser; do not launch another browser or browser process."
+                " Capture a new snapshot after navigation or stale IDs."
+            )
+        )
+        async def run(code: str | None = None, actions: list[SnapshotAction] | None = None) -> str:
+            result = await self._call(self._facade.run(code=code, actions=actions))
+            return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+
+        @tool(
+            description=descriptions["snapshot"]
+            + (" Capture a new snapshot after navigation or stale IDs before taking actions.")
+        )
+        async def snapshot(includeIframes: bool = True) -> str:
+            return await self._call(self._facade.snapshot(include_iframes=includeIframes))
+
+        @tool(description=descriptions["screenshot"])
+        async def screenshot(
+            fullPage: bool | None = None,
+            type: Literal["png", "jpeg"] = "png",
+            quality: Annotated[float | None, Field(ge=0, le=100)] = None,
+        ) -> list[dict[str, str]]:
+            image = await self._call(
+                self._facade.screenshot(
+                    full_page=fullPage,
+                    type=type,
+                    quality=quality,
+                )
+            )
+            return [{"type": "image", "base64": image["data"], "mime_type": image["mimeType"]}]
+
+        self.tools = [run, snapshot, screenshot]
+        for browser_tool in self.tools:
+            browser_tool.handle_tool_error = True
+            browser_tool.handle_validation_error = True
 
     @override
     async def abefore_agent(self, state: AgentState, runtime: Runtime) -> None:
@@ -50,58 +92,11 @@ class StagehandMiddleware(AgentMiddleware):
             self._finished = True
             await self._facade.close()
 
-    def _tool(self, spec: dict[str, Any]) -> StructuredTool:
-        name = spec["name"]
-        validator = Draft202012Validator(spec["inputSchema"])
-
-        async def invoke(**kwargs: Any) -> Any:
-            if self._finished:
-                raise ToolException("The Stagehand session has closed.")
-            errors = list(validator.iter_errors(kwargs))
-            if errors:
-                raise ToolException(
-                    "Invalid browser tool arguments; follow the tool's input schema."
-                )
-            try:
-                if name == "run":
-                    result = await self._facade.run(**kwargs)
-                    return (
-                        result
-                        if isinstance(result, str)
-                        else json.dumps(result, ensure_ascii=False)
-                    )
-                if name == "snapshot":
-                    return await self._facade.snapshot(
-                        include_iframes=kwargs.get("includeIframes", True)
-                    )
-                image = await self._facade.screenshot(
-                    full_page=kwargs.get("fullPage"),
-                    type=kwargs.get("type", "png"),
-                    quality=kwargs.get("quality"),
-                )
-                return [{"type": "image", "base64": image["data"], "mime_type": image["mimeType"]}]
-            except (StagehandFacadeInputError, StagehandFacadeExecutionError) as error:
-                raise ToolException(str(error)) from None
-
-        description = spec["description"]
-        if name == "run":
-            description += (
-                " Reuse the initialized browser; do not launch another browser or browser process."
-                " Snapshot action IDs are valid only for the latest snapshot;"
-                " capture a new snapshot after navigation or stale IDs."
-            )
-        elif name == "snapshot":
-            description += (
-                " Capture a new snapshot after navigation or stale IDs before taking actions."
-            )
-
-        return StructuredTool.from_function(
-            coroutine=invoke,
-            name=name,
-            description=description,
-            args_schema=spec["inputSchema"],
-            handle_tool_error=True,
-        )
+    async def _call(self, operation: Awaitable[T]) -> T:
+        try:
+            return await operation
+        except (StagehandFacadeInputError, StagehandFacadeExecutionError) as error:
+            raise ToolException(str(error)) from None
 
     @override
     async def awrap_model_call(
