@@ -89,11 +89,3 @@ make build
 `make check` enforces Ruff formatting and lint rules (including bug-prone patterns, async misuse, and accidental prints), ty checking of the package and public API examples with all diagnostics treated as errors, and focused middleware tests. The distribution includes `py.typed` so downstream type checkers can validate usage. Astral's ty is pinned in the Makefile and runs through `uvx`; no extra runtime dependency is needed.
 
 The live browser test covers local Chrome and Browserbase; the remote case is skipped without `BROWSERBASE_API_KEY`. Set `CHROME_PATH` if Chrome is not in its usual install location. The Python distribution is `langchain-stagehand`, and the import is `langchain_stagehand`; this repository does not publish the separate upstream `stagehand-deepagents` package.
-
-## Release
-
-The initial version is `0.0.1`. Configure a PyPI pending trusted publisher for `langchain-stagehand` with GitHub owner `langchain-ai`, repository `langchain-browserbase`, workflow `release.yml`, and environment `pypi`. In GitHub, configure the `pypi` environment with required reviewers and restrict deployments to `main`.
-
-After merging, run **Actions → Release to PyPI → Run workflow** on `main`. The workflow checks the locked dependencies, runs lint/type checks and focused tests, builds the distribution, and publishes with uv using OIDC trusted publishing—no PyPI token. It publishes the version in `pyproject.toml`; bump that version and refresh `uv.lock` before subsequent releases. Live browser verification is a separate pre-release check, not part of publishing.
-
-The middleware constructor and browser tool arguments are keyword-only so optional parameters can evolve without positional-call ambiguity.
