@@ -2,10 +2,10 @@
 
 from typing import assert_type
 
-from stagehand import Stagehand
+from stagehand import StagehandBrowser
 
 from langchain_stagehand import StagehandMiddleware
 
 
-def public_api(stagehand: Stagehand) -> None:
-    assert_type(StagehandMiddleware(stagehand=stagehand), StagehandMiddleware)
+def public_api(browser: StagehandBrowser) -> None:
+    assert_type(StagehandMiddleware(browser=browser), StagehandMiddleware)

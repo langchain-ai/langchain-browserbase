@@ -1,11 +1,9 @@
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelRequest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from stagehand_middleware.facade import StagehandFacadeInputError
 
 from langchain_stagehand import StagehandMiddleware
@@ -13,14 +11,19 @@ from langchain_stagehand import StagehandMiddleware
 
 @pytest.fixture
 def middleware():
-    with patch("langchain_stagehand.middleware.StagehandFacadeTools") as facade:
+    with (
+        patch("langchain_stagehand.middleware.Stagehand.create", AsyncMock()),
+        patch("langchain_stagehand.middleware.StagehandFacadeTools") as facade,
+    ):
         facade.return_value.run = AsyncMock(return_value={"title": "Example"})
         facade.return_value.snapshot = AsyncMock(return_value="[1-1] button Submit")
         facade.return_value.screenshot = AsyncMock(
             return_value={"data": "aW1hZ2U=", "mimeType": "image/png"}
         )
         facade.return_value.close = AsyncMock()
-        yield StagehandMiddleware(stagehand=MagicMock())
+        middleware = StagehandMiddleware(browser=MagicMock())
+        middleware.facade = facade.return_value
+        yield middleware
 
 
 async def test_tools_delegate_and_preserve_schemas(middleware):
@@ -28,9 +31,9 @@ async def test_tools_delegate_and_preserve_schemas(middleware):
     assert [tool.name for tool in middleware.tools] == ["run", "snapshot", "screenshot"]
     assert "actions" in run.get_input_schema().model_json_schema()["properties"]
     assert await run.ainvoke({"code": "return await page.title();"}) == '{"title": "Example"}'
-    middleware._facade.run.assert_awaited_once_with(code="return await page.title();", actions=None)
+    middleware.facade.run.assert_awaited_once_with(code="return await page.title();", actions=None)
     assert await snapshot.ainvoke({"includeIframes": False}) == "[1-1] button Submit"
-    middleware._facade.snapshot.assert_awaited_once_with(include_iframes=False)
+    middleware.facade.snapshot.assert_awaited_once_with(include_iframes=False)
     result = await screenshot.ainvoke(
         {"type": "tool_call", "id": "shot", "name": "screenshot", "args": {"fullPage": True}}
     )
@@ -38,35 +41,18 @@ async def test_tools_delegate_and_preserve_schemas(middleware):
     assert result.content_blocks == [
         {"type": "image", "base64": "aW1hZ2U=", "mime_type": "image/png"}
     ]
-    middleware._facade.screenshot.assert_awaited_once_with(full_page=True, type="png", quality=None)
+    middleware.facade.screenshot.assert_awaited_once_with(full_page=True, type="png", quality=None)
 
 
 async def test_errors_are_model_visible(middleware):
     run, _, screenshot = middleware.tools
-    middleware._facade.run.side_effect = StagehandFacadeInputError("Snapshot IDs are stale")
+    middleware.facade.run.side_effect = StagehandFacadeInputError("Snapshot IDs are stale")
     assert (
         await run.ainvoke({"actions": [{"op": "click", "id": "1-1"}]}) == "Snapshot IDs are stale"
     )
     assert "validation error" in await screenshot.ainvoke({"quality": 101})
     assert "validation error" in await run.ainvoke({"actions": [{"op": "fill", "id": "1-1"}]})
-    middleware._facade.screenshot.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "system_message",
-    [
-        None,
-        SystemMessage(
-            content="Original instruction", name="policy", additional_kwargs={"custom": "value"}
-        ),
-    ],
-)
-async def test_model_request_is_untouched(middleware, system_message):
-    request = ModelRequest(model=MagicMock(), messages=[], system_message=system_message)
-    handler = AsyncMock(return_value=SimpleNamespace(result=[]))
-    await middleware.awrap_model_call(request, handler)
-    assert handler.call_args.args[0] is request
-    assert request.system_message is system_message
+    middleware.facade.screenshot.assert_not_awaited()
 
 
 def test_tool_descriptions_include_browser_guidance(middleware):
@@ -103,29 +89,23 @@ async def test_agent_executes_browser_tool(middleware):
     result = await agent.ainvoke({"messages": [{"role": "user", "content": "Inspect the page"}]})
     assert result["messages"][-1].content == "Found the Submit button"
     assert result["messages"][-2].content == "[1-1] button Submit"
-    middleware._facade.close.assert_awaited_once()
+    middleware.facade.close.assert_awaited_once()
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": "Again"}]})
+    assert result["messages"][-1].content == "Found the Submit button"
 
 
-async def test_lifecycle_closes_client(middleware):
-    await middleware.abefore_agent({}, MagicMock())
-    await middleware.aafter_agent({}, MagicMock())
-    middleware._facade.close.assert_awaited_once()
-    with pytest.raises(RuntimeError, match="fresh Stagehand"):
-        await middleware.abefore_agent({}, MagicMock())
+async def test_client_detaches_after_each_run_and_reattaches(middleware):
+    run = middleware.tools[0]
+    for _ in range(2):
+        await run.ainvoke({"code": "return 1;"})
+        await middleware.aafter_agent({}, MagicMock())
+    assert middleware.facade.close.await_count == 2
+    await middleware.aafter_agent({}, MagicMock())  # nothing attached: no-op
+    assert middleware.facade.close.await_count == 2
 
 
-async def test_model_failure_closes_client(middleware):
-    request = ModelRequest(model=MagicMock(), messages=[])
-    with pytest.raises(RuntimeError, match="model failed"):
-        await middleware.awrap_model_call(
-            request, AsyncMock(side_effect=RuntimeError("model failed"))
-        )
-    middleware._facade.close.assert_awaited_once()
-
-
-async def test_tool_failure_closes_client(middleware):
-    with pytest.raises(RuntimeError, match="tool failed"):
-        await middleware.awrap_tool_call(
-            MagicMock(), AsyncMock(side_effect=RuntimeError("tool failed"))
-        )
-    middleware._facade.close.assert_awaited_once()
+async def test_connection_error_detaches(middleware):
+    run = middleware.tools[0]
+    middleware.facade.run.side_effect = ConnectionError("socket closed")
+    assert "ConnectionError: socket closed" in await run.ainvoke({"code": "return 1;"})
+    middleware.facade.close.assert_awaited_once()

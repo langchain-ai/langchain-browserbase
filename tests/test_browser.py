@@ -4,7 +4,7 @@ import pytest
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, ToolMessage
-from stagehand import Stagehand, browserbase, local_browser
+from stagehand import browserbase, local_browser
 
 from langchain_stagehand import StagehandMiddleware
 
@@ -21,8 +21,7 @@ async def test_live_browser(provider):
     else:
         browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
     try:
-        stagehand = await Stagehand.create(browser=browser)
-        middleware = StagehandMiddleware(stagehand=stagehand)
+        middleware = StagehandMiddleware(browser=browser)
 
         class ToolCallingModel(FakeMessagesListChatModel):
             def bind_tools(self, tools, **kwargs):
@@ -59,6 +58,14 @@ async def test_live_browser(provider):
                     ],
                 ),
                 AIMessage(content="Done"),
+                # A second run on the same browser still sees the page.
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "run", "id": "title", "args": {"code": "return page.url();"}}
+                    ],
+                ),
+                AIMessage(content="Done again"),
             ]
         )
         agent = create_agent(model, middleware=[middleware])
@@ -69,7 +76,7 @@ async def test_live_browser(provider):
         assert outputs[0].content == "Example Domain"
         assert "Example Domain" in outputs[1].content
         assert outputs[2].content_blocks[0]["mime_type"] == "image/jpeg"
-        with pytest.raises(RuntimeError):
-            await browser.context.pages()
+        result = await agent.ainvoke({"messages": [{"role": "user", "content": "Where are we?"}]})
+        assert result["messages"][-2].content == "https://example.com/"
     finally:
         await browser.close()

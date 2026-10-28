@@ -20,22 +20,24 @@ import asyncio
 
 from langchain.agents import create_agent
 from langchain_stagehand import StagehandMiddleware
-from stagehand import Stagehand, browserbase
+from stagehand import browserbase
 
 
 async def main():
     import os
 
     browser = await browserbase.launch(api_key=os.environ["BROWSERBASE_API_KEY"])
-    stagehand = await Stagehand.create(browser=browser)
     agent = create_agent(
         "anthropic:claude-sonnet-4-6",
-        middleware=[StagehandMiddleware(stagehand=stagehand)],
+        middleware=[StagehandMiddleware(browser=browser)],
     )
-    result = await agent.ainvoke({
-        "messages": [{"role": "user", "content": "Open example.com and summarize the page."}]
-    })
-    print(result["messages"][-1].content)
+    try:
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Open example.com and summarize the page."}]
+        })
+        print(result["messages"][-1].content)
+    finally:
+        await browser.close()
 
 
 asyncio.run(main())
@@ -45,31 +47,28 @@ Install the model integration separately, such as `pip install langchain-anthrop
 
 ## Use with Deep Agents
 
-Use the same Stagehand client setup and replace `create_agent` with:
+Use the same browser setup and replace `create_agent` with:
 
 ```python
 from deepagents import create_deep_agent
 
-agent = create_deep_agent("anthropic:claude-sonnet-4-6", middleware=[StagehandMiddleware(stagehand=stagehand)])
+agent = create_deep_agent("anthropic:claude-sonnet-4-6", middleware=[StagehandMiddleware(browser=browser)])
 ```
 
 Install `deepagents` separately. Use `ainvoke` or `astream`: browser tools and middleware are asynchronous.
 
-## Client lifecycle
+## Browser lifecycle
 
-Pass a Stagehand client using `StagehandMiddleware(stagehand=stagehand)`. There is no middleware connection method or parallel configuration API. Use the Stagehand SDK directly to configure Browserbase or local Chrome:
+Pass a browser launched with the Stagehand SDK, local Chrome or Browserbase:
 
 ```python
-from stagehand import Stagehand, local_browser
+from stagehand import local_browser
 
 browser = await local_browser.launch(headless=True)
-stagehand = await Stagehand.create(browser=browser)
-middleware = StagehandMiddleware(stagehand=stagehand)
+middleware = StagehandMiddleware(browser=browser)
 ```
 
-Passing the client transfers cleanup responsibility to the middleware. It closes Stagehand and its browser after the agent finishes, and on model/tool exceptions or cancellation within those calls. Create a fresh client and middleware per agent invocation; reuse and concurrent invocations are rejected. Browser state is shared across tool calls within that invocation, not across invocations. Do not share the client with another agent. Take a new snapshot after navigation before using snapshot IDs.
-
-If client creation fails before the middleware is constructed, close the browser yourself. Failures in other middleware hooks, graph-level interruption, or abandoning a stream may bypass these hooks; the application must ensure cleanup in those cases.
+Your application owns the browser and closes it when it is done with the agent. The middleware attaches a Stagehand client on the first browser call and detaches it after each run, so the same agent can be invoked again and its tabs and logins carry over. If the connection fails, the next browser call attaches afresh. A browser serves one agent at a time: give concurrent agents their own browsers. Take a new snapshot after navigation before using snapshot IDs.
 
 ## Security and limitations
 
@@ -77,7 +76,7 @@ If client creation fails before the middleware is constructed, close the browser
 - Web page content is untrusted input, not instructions for your agent
 - The Playwright-shaped API is not a general-purpose security sandbox or a substitute for network isolation
 - `artifact_root` bounds where screenshots saved by run code can be written; use a dedicated directory per session
-- Agent execution and session creation are asynchronous only; sessions are not checkpointed or resumed automatically
+- Agent execution is asynchronous only; browser state lives in the browser and is not checkpointed
 
 ## Development
 
