@@ -4,14 +4,11 @@ Add a persistent browser to a LangChain or Deep Agents agent with `StagehandMidd
 
 ## Install
 
-This package is not published to PyPI yet. Install from a local checkout:
-
 ```bash
-git clone https://github.com/langchain-ai/langchain-browserbase.git
-pip install ./langchain-browserbase
+pip install langchain-stagehand
 ```
 
-Python 3.11+ is required. Set your model provider's API key and `BROWSERBASE_API_KEY` in your environment. Never put credentials in browser tool inputs.
+Python 3.11+ is required. Set your model provider's API key in your environment, and `BROWSERBASE_API_KEY` to use Browserbase. Never put credentials in browser tool inputs.
 
 ## Use with LangChain
 
@@ -68,7 +65,7 @@ stagehand = await Stagehand.create(browser=browser)
 middleware = StagehandMiddleware(stagehand=stagehand)
 ```
 
-Your application configures and owns the Stagehand client and browser. All SDK settings remain available through `Stagehand.create(...)`, including API URL, model, caching, telemetry, and logging. The middleware reuses that exact client across runs, preserving tabs, logins, and snapshot IDs. Close the browser when finished; that also closes the client. The middleware never closes or recreates the client, and `browser.close()` in run code leaves both open: after a disconnection, the application supplies a new configured client. Give concurrent agents separate clients/browsers. Take a new snapshot after navigation before using snapshot IDs.
+Your application configures and owns the Stagehand client and browser. All SDK settings remain available through `Stagehand.create(...)`, including API URL, model, caching, telemetry, and logging. The middleware reuses that exact client across runs, preserving tabs, logins, and snapshot IDs. Close the browser when finished; that also closes the client. The middleware never closes or recreates the client, and `browser.close()` in run code leaves both open. After a disconnection, the application supplies a new configured client. Give concurrent agents separate clients/browsers. Take a new snapshot after navigation before using snapshot IDs.
 
 The screenshot tool returns images to the model. Screenshots that run code saves with a `path` are written under the current working directory, not to a Deep Agents backend; backend support is not implemented yet.
 
@@ -89,7 +86,7 @@ RUN_BROWSER_TESTS=1 uv run pytest tests/test_browser.py --color=no
 make build
 ```
 
-`make check` enforces Ruff formatting and lint rules (including bug-prone patterns, async misuse, and accidental prints), ty checking of the package and public API examples with all diagnostics treated as errors, and focused agent/lifecycle tests. The distribution includes `py.typed` so downstream type checkers can validate usage. Astral's ty is pinned in the Makefile and runs through `uvx`; no extra runtime dependency is needed.
+`make check` enforces Ruff formatting and lint rules (including bug-prone patterns, async misuse, and accidental prints), ty checking of the package and public API examples with all diagnostics treated as errors, and focused middleware tests. The distribution includes `py.typed` so downstream type checkers can validate usage. Astral's ty is pinned in the Makefile and runs through `uvx`; no extra runtime dependency is needed.
 
 The live browser test covers local Chrome and Browserbase; the remote case is skipped without `BROWSERBASE_API_KEY`. Set `CHROME_PATH` if Chrome is not in its usual install location. The Python distribution is `langchain-stagehand`, and the import is `langchain_stagehand`; this repository does not publish the separate upstream `stagehand-deepagents` package.
 
