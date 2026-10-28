@@ -1,5 +1,5 @@
 [project]
-name = "langchain-browserbase"
+name = "langchain-stagehand"
 version = "0.1.0"
 description = "Browserbase and Stagehand browser middleware for LangChain agents"
 readme = "README.md"
@@ -23,6 +23,7 @@ dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.15,<0.16"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -30,4 +31,14 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF", "T20"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src", "tests/typecheck.py"]
+
+[[tool.mypy.overrides]]
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true

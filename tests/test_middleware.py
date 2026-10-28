@@ -8,18 +8,18 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from stagehand_middleware.facade import StagehandFacadeInputError, facade_instructions
 
-from langchain_browserbase import BrowserbaseMiddleware
+from langchain_stagehand import StagehandMiddleware
 
 
 @pytest.fixture
 def middleware():
-    with patch("langchain_browserbase.middleware.StagehandFacadeTools") as facade:
+    with patch("langchain_stagehand.middleware.StagehandFacadeTools") as facade:
         facade.return_value.run = AsyncMock(return_value={"title": "Example"})
         facade.return_value.snapshot = AsyncMock(return_value="[1-1] button Submit")
         facade.return_value.screenshot = AsyncMock(
             return_value={"data": "aW1hZ2U=", "mimeType": "image/png"}
         )
-        yield BrowserbaseMiddleware(MagicMock())
+        yield StagehandMiddleware(MagicMock())
 
 
 async def test_tools_delegate_and_preserve_schemas(middleware):
@@ -52,7 +52,11 @@ async def test_errors_are_model_visible(middleware):
 
 async def test_system_message_is_preserved(middleware):
     request = ModelRequest(
-        model=MagicMock(), messages=[], system_message=SystemMessage(content="Original instruction")
+        model=MagicMock(),
+        messages=[],
+        system_message=SystemMessage(
+            content="Original instruction", name="policy", additional_kwargs={"custom": "value"}
+        ),
     )
     handler = AsyncMock(return_value=SimpleNamespace(result=[]))
     await middleware.awrap_model_call(request, handler)
@@ -62,6 +66,8 @@ async def test_system_message_is_preserved(middleware):
         {"type": "text", "text": facade_instructions()},
     ]
     assert request.system_message.content == "Original instruction"
+    assert updated.system_message.name == "policy"
+    assert updated.system_message.additional_kwargs == {"custom": "value"}
 
 
 @pytest.mark.parametrize("provider", ["local", "browserbase"])
@@ -71,15 +77,15 @@ async def test_connect_closes_resources(provider):
     module = "browserbase" if provider == "browserbase" else "local_browser"
     with (
         patch(
-            f"langchain_browserbase.middleware.{module}.launch",
+            f"langchain_stagehand.middleware.{module}.launch",
             AsyncMock(return_value=browser),
         ) as launch,
-        patch(
-            "langchain_browserbase.middleware.Stagehand.create", AsyncMock(return_value=stagehand)
-        ),
+        patch("langchain_stagehand.middleware.Stagehand.create", AsyncMock(return_value=stagehand)),
     ):
         with pytest.raises(RuntimeError, match="Agent failed"):
-            async with BrowserbaseMiddleware.connect(provider=provider, api_key="test-key"):
+            async with StagehandMiddleware.connect(
+                provider=provider, api_key="test-key" if provider == "browserbase" else None
+            ):
                 raise RuntimeError("Agent failed")
         launch.assert_awaited_once()
         stagehand.close.assert_awaited_once()
@@ -90,15 +96,15 @@ async def test_creation_failure_closes_browser():
     browser = SimpleNamespace(close=AsyncMock())
     with (
         patch(
-            "langchain_browserbase.middleware.local_browser.launch", AsyncMock(return_value=browser)
+            "langchain_stagehand.middleware.local_browser.launch", AsyncMock(return_value=browser)
         ),
         patch(
-            "langchain_browserbase.middleware.Stagehand.create",
+            "langchain_stagehand.middleware.Stagehand.create",
             AsyncMock(side_effect=RuntimeError("startup failed")),
         ),
     ):
         with pytest.raises(RuntimeError, match="startup failed"):
-            async with BrowserbaseMiddleware.connect(provider="local"):
+            async with StagehandMiddleware.connect(provider="local"):
                 pytest.fail("Should not enter context")
         browser.close.assert_awaited_once()
 
@@ -130,8 +136,43 @@ async def test_agent_executes_browser_tool(middleware):
     assert result["messages"][-2].content == "[1-1] button Submit"
 
 
+async def test_typed_options_forwarded():
+    browser = SimpleNamespace(close=AsyncMock())
+    stagehand = SimpleNamespace(close=AsyncMock())
+    with (
+        patch(
+            "langchain_stagehand.middleware.browserbase.launch", AsyncMock(return_value=browser)
+        ) as launch,
+        patch(
+            "langchain_stagehand.middleware.Stagehand.create", AsyncMock(return_value=stagehand)
+        ) as create,
+    ):
+        async with StagehandMiddleware.connect(
+            api_key="test-key",
+            browserbase_options={"keep_alive": True},
+            stagehand_options={"self_heal": False},
+        ):
+            pass
+        launch.assert_awaited_once_with(api_key="test-key", keep_alive=True)
+        create.assert_awaited_once_with(browser=browser, self_heal=False)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"provider": "local", "browserbase_options": {}},
+        {"provider": "browserbase", "local_options": {}},
+        {"provider": "local", "api_key": "unused-key"},
+    ],
+)
+async def test_rejects_wrong_provider_options(options):
+    with pytest.raises(ValueError):
+        async with StagehandMiddleware.connect(**options):
+            pytest.fail("Invalid options should not launch a browser")
+
+
 async def test_browserbase_requires_key(monkeypatch):
     monkeypatch.delenv("BROWSERBASE_API_KEY", raising=False)
     with pytest.raises(ValueError, match="BROWSERBASE_API_KEY"):
-        async with BrowserbaseMiddleware.connect():
+        async with StagehandMiddleware.connect():
             pytest.fail("Should not enter context")

@@ -1,6 +1,6 @@
-# LangChain Browserbase
+# LangChain Stagehand
 
-Add a persistent browser to a LangChain or Deep Agents agent with `BrowserbaseMiddleware`. The middleware exposes Stagehand's shared `run`, `snapshot`, and `screenshot` tools, injects their browser instructions, and returns screenshots as model-visible images. No MCP server is needed.
+Add a persistent browser to a LangChain or Deep Agents agent with `StagehandMiddleware`. The middleware exposes Stagehand's shared `run`, `snapshot`, and `screenshot` tools, injects their browser instructions, and returns screenshots as model-visible images. No MCP server is needed.
 
 ## Install
 
@@ -19,11 +19,11 @@ Python 3.11+ is required. Set your model provider's API key and `BROWSERBASE_API
 import asyncio
 
 from langchain.agents import create_agent
-from langchain_browserbase import BrowserbaseMiddleware
+from langchain_stagehand import StagehandMiddleware
 
 
 async def main():
-    async with BrowserbaseMiddleware.connect() as browser:
+    async with StagehandMiddleware.connect() as browser:
         agent = create_agent("anthropic:claude-sonnet-4-6", middleware=[browser])
         result = await agent.ainvoke({
             "messages": [{"role": "user", "content": "Open example.com and summarize the page."}]
@@ -51,16 +51,16 @@ Install `deepagents` separately. Use `ainvoke` or `astream`: browser tools and m
 ## Local browser and session options
 
 ```python
-async with BrowserbaseMiddleware.connect(
+async with StagehandMiddleware.connect(
     provider="local",
-    browser_options={"headless": True},
+    local_options={"headless": True},
 ) as browser:
     ...
 ```
 
-Local mode requires Chrome. `browser_options` forwards options to `stagehand.local_browser.launch` or `stagehand.browserbase.launch`; `stagehand_options` forwards options to `Stagehand.create`. For example, pass Browserbase `region` or `browser_settings` in `browser_options`. The context manager closes both Stagehand and the browser on exit, including when the agent fails.
+Local mode requires Chrome. `local_options`, `browserbase_options`, and `stagehand_options` are typed dictionaries exported as `LocalBrowserOptions`, `BrowserbaseOptions`, and `StagehandOptions`. They expose common SDK settings with editor completion and static checking rather than untyped keyword bags. For example, pass Browserbase `region` or `browser_settings` in `browserbase_options`. Options for the wrong provider raise an error. For SDK settings not exposed here, create a Stagehand session yourself and pass it to the middleware constructor. The context manager closes both Stagehand and the browser on exit, including when the agent fails.
 
-To reuse an existing Stagehand session, construct `BrowserbaseMiddleware(stagehand)`. You own its lifecycle and must close it yourself. A browser session persists across agent calls while its context remains open. Do not share one middleware instance across unrelated conversations or tenants; the underlying facade serializes tool calls, but it does not isolate their browsing state. Take a new snapshot after navigation before using snapshot IDs.
+To reuse an existing Stagehand session, construct `StagehandMiddleware(stagehand)`. You own its lifecycle and must close it yourself. A browser session persists across agent calls while its context remains open. Do not share one middleware instance across unrelated conversations or tenants; the underlying facade serializes tool calls, but it does not isolate their browsing state. Take a new snapshot after navigation before using snapshot IDs.
 
 ## Security and limitations
 
@@ -73,14 +73,15 @@ To reuse an existing Stagehand session, construct `BrowserbaseMiddleware(stageha
 ## Development
 
 ```bash
-uv sync
-uv run ruff format .
-uv run ruff check .
-uv run pytest tests/test_middleware.py --color=no
+make install
+make format
+make check
 RUN_BROWSER_TESTS=1 uv run pytest tests/test_browser.py --color=no
-uv build
+make build
 ```
 
-The live browser test covers local Chrome and Browserbase; the remote case is skipped without `BROWSERBASE_API_KEY`. Set `CHROME_PATH` if Chrome is not in its usual install location. The Python distribution is `langchain-browserbase`, and the import is `langchain_browserbase`; this repository does not publish the separate upstream `stagehand-deepagents` package.
+`make check` enforces Ruff formatting and lint rules (including bug-prone patterns, async misuse, and accidental prints), strict mypy checking of the package and public API examples, and focused agent/lifecycle tests. The distribution includes `py.typed` so downstream type checkers can validate usage. Mypy is pinned in the Makefile and runs through `uvx`; no extra runtime dependency is needed.
+
+The live browser test covers local Chrome and Browserbase; the remote case is skipped without `BROWSERBASE_API_KEY`. Set `CHROME_PATH` if Chrome is not in its usual install location. The Python distribution is `langchain-stagehand`, and the import is `langchain_stagehand`; this repository does not publish the separate upstream `stagehand-deepagents` package.
 
 Before release, configure package ownership and trusted publishing, run both live browser cases, and publish the built distribution to PyPI. CI and publishing workflows are not configured by this initial implementation.
