@@ -8,7 +8,7 @@ license = "MIT"
 dependencies = [
   "langchain>=1.4.7,<2",
   "stagehand>=4.3.0,<5",
-  "stagehand-middleware>=0.1.1,<0.2",
+  "stagehand-middleware>=0.1.2,<0.2",
 ]
 
 [project.urls]
