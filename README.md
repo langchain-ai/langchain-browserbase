@@ -67,7 +67,7 @@ middleware = StagehandMiddleware(stagehand=stagehand)
 
 Your application configures and owns the Stagehand client and browser. All SDK settings remain available through `Stagehand.create(...)`, including API URL, model, caching, telemetry, and logging. The middleware reuses that exact client across runs, preserving tabs, logins, and snapshot IDs. Close the browser when finished; that also closes the client. The middleware never closes or recreates the client, and `browser.close()` in run code leaves both open. After a disconnection, the application supplies a new configured client. Give concurrent agents separate clients/browsers. Take a new snapshot after navigation before using snapshot IDs.
 
-The screenshot tool returns images to the model. Screenshots that run code saves with a `path` are written under the current working directory, not to a Deep Agents backend; backend support is not implemented yet.
+The screenshot tool returns images to the model. Screenshots that run code saves with a `path` are written as PNG or JPEG files under `stagehand-artifacts` in the current working directory, not to a Deep Agents backend; backend support is not implemented yet.
 
 ## Security and limitations
 
